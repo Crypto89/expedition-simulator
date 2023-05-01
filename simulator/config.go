@@ -1,12 +1,9 @@
 package simulator
 
 type Config struct {
-	Rounds               int
-	ExpeditionPoints     int
-	SpeedFactor          int
-	HyperspaceTechnology int
+	Rounds           int
+	ExpeditionPoints int
+	SpeedFactor      int
 
-	Cargo      Cargo
-	CargoShips int
-	Reward     Reward
+	Reward Reward
 }

@@ -1,7 +1,6 @@
 package simulator
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -12,40 +11,13 @@ type Simulator struct {
 	r *rand.Rand
 
 	config *Config
+	ships  []*Ship
 }
 
-type SimulationResult struct {
-	Reward       Reward
-	Factor       int
-	ResourceType Resource
-	Resources    int
-}
-
-func (sr *SimulationResult) GetMSE() int {
-	switch sr.ResourceType {
-	case RESOURCE_DEUTERIUM:
-		return sr.Resources * 3
-	case RESOURCE_CRYSTAL:
-		return sr.Resources * 2
-	default:
-		return sr.Resources
-	}
-}
-
-type AggregateResult struct {
-	MSE int
-
-	Results []*SimulationResult
-}
-
-func (sr *SimulationResult) String() string {
-	return fmt.Sprintf("[%s] roll %d yields %d %s", sr.Reward, sr.Factor, sr.Resources, sr.ResourceType)
-}
-
-func NewSimulator(c *Config) (*Simulator, error) {
+func NewSimulator(c *Config, ships []*Ship) (*Simulator, error) {
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 
-	return &Simulator{r, c}, nil
+	return &Simulator{r, c, ships}, nil
 }
 
 func (s *Simulator) Run() *AggregateResult {
@@ -57,6 +29,7 @@ func (s *Simulator) Run() *AggregateResult {
 		res := s.simulate(n)
 		aggregate.Results[n] = res
 		aggregate.MSE += res.GetMSE()
+		aggregate.FuelConsumption += res.FuelConsumption
 	}
 
 	return aggregate
@@ -64,18 +37,31 @@ func (s *Simulator) Run() *AggregateResult {
 
 func (s *Simulator) simulate(round int) *SimulationResult {
 	reward := s.rollReward()
-	result := &SimulationResult{Reward: reward}
+	result := &SimulationResult{
+		Reward:          reward,
+		FuelConsumption: CalculateConsumption(s.ships, 1040, 10, 1),
+	}
 
 	switch reward {
 	case REWARD_RESOURCES:
 		result.Factor = s.rollFactor()
 		resourcePoints := s.calculateResources(result.Factor)
 		result.ResourceType = s.rollResourceType()
-		result.Resources = int(result.ResourceType) * resourcePoints
 
-		if cap := s.config.Cargo.Capacity(s.config.HyperspaceTechnology); cap*s.config.CargoShips < result.Resources {
-			logrus.Warnf("rolled value %d over ship capacity %d", result.Resources, cap*s.config.CargoShips)
-			result.Resources = cap * s.config.CargoShips
+		switch result.ResourceType {
+		case RESOURCE_METAL:
+			result.Resources = resourcePoints
+		case RESOURCE_CRYSTAL:
+			result.Resources = resourcePoints / 2
+		case RESOURCE_DEUTERIUM:
+			result.Resources = resourcePoints / 3
+		}
+
+		storageCapacity := CalculateCapacity(s.ships)
+
+		if storageCapacity < result.Resources {
+			logrus.Debugf("rolled value %d over ship capacity %d", result.Resources, storageCapacity)
+			result.Resources = storageCapacity
 		}
 	}
 
@@ -87,8 +73,10 @@ func (s *Simulator) rollFactor() int {
 	case roll < 0.01:
 		return s.rollFactorValue(100, 200, 2)
 	case roll < 0.11:
+		// large
 		return s.rollFactorValue(50, 100, 2)
 	default:
+		// normal
 		return s.rollFactorValue(10, 50, 2)
 	}
 }
@@ -97,8 +85,10 @@ func (s *Simulator) rollReward() Reward {
 	switch roll := s.r.Float64(); {
 	case roll < 0.325:
 		return REWARD_RESOURCES
-	case roll < 0.545:
+	case roll < 0.325+0.22:
 		return REWARD_SHIPS
+	case roll >= 1.-(.0033/2.):
+		return REWARD_BLACKHOLE
 	default:
 		return REWARD_NONE
 	}
@@ -116,7 +106,7 @@ func (s *Simulator) rollResourceType() Resource {
 }
 
 func (s *Simulator) calculateResources(factor int) int {
-	return factor * s.config.ExpeditionPoints * s.config.SpeedFactor
+	return int(float64(factor*s.config.ExpeditionPoints*s.config.SpeedFactor*2) * 1.5)
 }
 
 func (s *Simulator) rollFactorValue(min, max, step int) int {

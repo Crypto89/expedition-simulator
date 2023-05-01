@@ -29,6 +29,8 @@ func (r Reward) String() string {
 		return "REWARD_RESOURCES"
 	case REWARD_SHIPS:
 		return "REWARD_SHIPS"
+	case REWARD_BLACKHOLE:
+		return "REWARD_BLACKHOLE"
 	default:
 		return "REWARD_UNKNOWN"
 	}
@@ -38,6 +40,7 @@ const (
 	REWARD_NONE Reward = iota
 	REWARD_RESOURCES
 	REWARD_SHIPS
+	REWARD_BLACKHOLE
 )
 
 type Bucket int
