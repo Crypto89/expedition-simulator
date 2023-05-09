@@ -1,6 +1,8 @@
 package main
 
 import (
+	"math"
+	"sync"
 	"time"
 
 	"github.com/crypto89/expedition-simulator/simulator"
@@ -11,7 +13,7 @@ func createShips(cargoCount int) []*simulator.Ship {
 	return []*simulator.Ship{
 		// large cargo
 		{
-			Count:           937,
+			Count:           cargoCount,
 			BaseConsumption: 50,
 			Speed:           16500,
 			Capacity:        37500,
@@ -41,8 +43,7 @@ func createShips(cargoCount int) []*simulator.Ship {
 }
 
 func main() {
-	ships := createShips(900)
-
+	logrus.SetLevel(logrus.DebugLevel)
 	// spew.Dump(simulator.CalculateConsumption(ships, 1040, 10, 1))
 	config := &simulator.Config{
 		Rounds:           1000000,
@@ -50,12 +51,53 @@ func main() {
 		SpeedFactor:      8,
 	}
 
-	sim, _ := simulator.NewSimulator(config, ships)
-
 	start := time.Now()
-	result := sim.Run()
-	logrus.Infof("simulation took: %s", time.Since(start))
 
-	logrus.Infof("resources found in %d expeditions: %d (fuel: %d)", 1000000, result.MSE, result.FuelConsumption)
-	logrus.Infof("average per expedition: %d", result.MSE/config.Rounds)
+	var results []*simulator.AggregateResult
+	var mu sync.Mutex
+	var thread int64
+	wg := &sync.WaitGroup{}
+	// simulationCount := int64(runtime.GOMAXPROCS(0) * 2)
+	simulationCount := int64(1)
+	logrus.Infof("simulating %d runs with %d expeditions", simulationCount, config.Rounds)
+	for thread = 0; thread < simulationCount; thread++ {
+		wg.Add(1)
+		go func(thread int64) {
+			defer wg.Done()
+			result := simulate(thread, config)
+			mu.Lock()
+			defer mu.Unlock()
+			results = append(results, result)
+		}(thread)
+	}
+
+	wg.Wait()
+
+	largeCargo := 0
+	for _, result := range results {
+		largeCargo += result.ShipCount
+	}
+
+	logrus.Infof("simulation took: %s", time.Since(start))
+	logrus.Infof("best expedition with %f Large Cargos", math.Ceil(float64(largeCargo)/float64(simulationCount)))
+}
+
+func simulate(thread int64, config *simulator.Config) *simulator.AggregateResult {
+	var best *simulator.AggregateResult
+
+	sim, _ := simulator.NewSimulator(config, thread)
+
+	for count := 500; count <= 1440; count += 10 {
+		ships := createShips(count)
+		result := sim.Run(ships)
+		if best == nil || result.Gain() > best.Gain() {
+			best = result
+			best.ShipCount = count
+		}
+		logrus.Debugf("expedition with %d large cargo gained %f on average", count, float64(result.Gain())/float64(config.Rounds))
+	}
+
+	// logrus.Infof("best rolls: %v", best.Rewards)
+
+	return best
 }

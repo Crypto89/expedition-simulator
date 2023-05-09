@@ -28,18 +28,16 @@ func (sr *SimulationResult) String() string {
 type AggregateResult struct {
 	MSE             int
 	FuelConsumption int
+	ShipCount       int
 
 	Results []*SimulationResult
+	Rewards map[Reward]int
 }
 
 func (ar *AggregateResult) Gain() int {
-	return ar.MSE - ar.FuelConsumptionMSE() - ar.LosesMSE()
+	return ar.MSE - ar.FuelConsumptionMSE()
 }
 
 func (ar *AggregateResult) FuelConsumptionMSE() int {
 	return ar.FuelConsumption * 3
-}
-
-func (ar *AggregateResult) LosesMSE() int {
-	return 0
 }
